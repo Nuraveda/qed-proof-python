@@ -15,10 +15,14 @@ from typing import Any, Callable
 
 import jsonschema
 
+from . import _nitro
 from . import _primitives as ref
 from .log import check_head, consistency_source
 
-__all__ = ["VerifyReport", "verify_receipt"]
+__all__ = ["AttestationError", "NitroAttestation", "VerifyReport", "verify_receipt"]
+
+AttestationError = _nitro.AttestationError
+NitroAttestation = _nitro.NitroAttestation
 
 
 @functools.lru_cache(maxsize=None)
@@ -78,6 +82,7 @@ class VerifyReport:
 def verify_receipt(
     receipt: dict, keys: dict, rpc_url: str | None = None, pipeline: dict | None = None, *,
     head: Any = None, consistency: Any = None, issuer: str | None = None, fetch: Callable[[str], Any] | None = None,
+    nitro_root: bytes | None = None,
 ) -> VerifyReport:
     """Verify a receipt against a keyset (as returned by ``GET /.well-known/poaw-keys.json`` or
     :meth:`QedProof.get_keys`). With ``rpc_url``, also checks the on-chain anchor (SPEC §8.4); without
@@ -93,6 +98,12 @@ def verify_receipt(
     obtainable the anchor reads ``"consistency_proof_required"``; a proof that does not verify reads
     ``"consistency_proof_invalid"``. Pass ``head`` (a signed tree head, SPEC §8.5: bare ``{body, signature}`` or the
     ``GET /v1/log/head`` response) to add a ``head`` check: its signature verifies and the receipt's tree is a prefix of it.
+
+    At ``trust_level >= 3`` the receipt's ``attestation_document`` is checked in full (SPEC §7.1, §10 step 5) against the
+    keyset's ``verifier_builds``, and ``checks["attestation"]`` is ``True`` or a reason (``attestation_invalid``,
+    ``attestation_chain``, ``pcr_mismatch``, ``statement_mismatch``, ``unknown_build``). A failure never invalidates the
+    receipt; it only caps the achieved level. Level 3 is cumulative: it needs level 2 and a passing attestation.
+    ``nitro_root`` (DER bytes) replaces the pinned AWS Nitro root and exists for tests only.
 
     Requires the ``qed-proof[anchor]`` extra when ``rpc_url`` is given.
     """
@@ -155,6 +166,18 @@ def verify_receipt(
         proven_by = a["proven_by"]
         anchor_checked = True
 
+    # §7.1 / §10 step 5: at trust_level >= 3 the attestation is checked in full. A failure never invalidates the receipt
+    # (it is still a signed L1/L2 receipt); it only caps the achieved level, and `attestation` carries the reason.
+    tl = body.get("trust_level")
+    if not is_change and c["schema"] and isinstance(tl, int) and not isinstance(tl, bool) and tl >= 3:
+        try:
+            _nitro.verify_enclave_receipt(receipt, keys.get("verifier_builds"), root_der=nitro_root)
+            c["attestation"] = True
+        except _nitro.AttestationError as e:
+            c["attestation"] = e.reason
+        except Exception:  # anything unforeseen is unproven, never a pass
+            c["attestation"] = "attestation_invalid"
+
     # §15.2: only present when the body carries a policy. Without the pipeline document it is "not_checked".
     policy = body.get("policy")
     if policy is not None:
@@ -171,6 +194,9 @@ def verify_receipt(
     # SPEC §7: report the ACHIEVED level. L2 needs inclusion AND an anchor verified on-chain (rpc_url given); offline
     # the ceiling is 1.
     achieved = (2 if c["inclusion"] is True and c["anchor"] is True else 1) if valid else 0
+    # §7.1: levels are cumulative, so level 3 needs level 2 (inclusion + a verified anchor) and every attestation rule.
+    if valid and c.get("attestation") is True and achieved == 2:
+        achieved = 3
     verdict = body.get("verdict", {}).get("value") if valid and not is_change else None
 
     return VerifyReport(

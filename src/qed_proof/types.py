@@ -65,7 +65,7 @@ class VerdictBlock(TypedDict, total=False):
 
 class Attestation(TypedDict, total=False):
     type: str
-    document: str
+    document_sha256: str
 
 
 class ReceiptBody(TypedDict, total=False):
@@ -110,6 +110,7 @@ class Receipt(TypedDict, total=False):
     body: ReceiptBody
     signature: Signature
     proof: Proof
+    attestation_document: str
 
 
 __all__ = [

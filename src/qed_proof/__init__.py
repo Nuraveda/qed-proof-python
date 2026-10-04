@@ -36,11 +36,13 @@ from .log import (
     verify_consistency,
     verify_tree_head,
 )
-from .verify import VerifyReport, verify_receipt
+from .verify import AttestationError, NitroAttestation, VerifyReport, verify_receipt
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
+    "AttestationError",
+    "NitroAttestation",
     "AnchorPage",
     "ConsistencyProof",
     "EntryPage",

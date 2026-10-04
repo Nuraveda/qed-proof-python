@@ -6,6 +6,17 @@ All notable changes to `qed-proof` are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-04
+
+### Added
+
+- Trust level 3 (SPEC §7.1, §10 step 5): at `trust_level >= 3`, `verify_receipt` checks the receipt's AWS Nitro Enclaves
+  attestation document offline (strict CBOR, COSE ES384, X.509 chain to the pinned AWS Nitro root, PCR0 = `code_hash`,
+  user_data = statement digest, `document_sha256`, and a published build in the keyset's `verifier_builds`). The result is
+  `checks["attestation"]` (`True` or a reason). `achieved_trust_level` is 3 only when level 2 is achieved and the
+  attestation passes; a failed attestation never invalidates the receipt, it only caps the level.
+- New exports `AttestationError` and `NitroAttestation`; `verify_receipt(..., nitro_root=)` is a test-only trust-anchor override.
+
 ## [0.3.0] - 2026-10-04
 
 Adds the free public Merkle log: read the log and check signed tree heads and consistency proofs.
@@ -74,6 +85,7 @@ Initial release.
 - Errors: `QedProofError`, `QedProofRateLimited` (exposes `retry_after`), `QedProofTimeout`.
 
 [Unreleased]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.3.0...HEAD
+[0.4.0]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.3.0...sdk-python-v0.4.0
 [0.3.0]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.2.0...sdk-python-v0.3.0
 [0.2.0]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.1.3...sdk-python-v0.2.0
 [0.1.3]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.1.2...sdk-python-v0.1.3
