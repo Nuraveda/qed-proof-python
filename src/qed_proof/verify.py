@@ -11,11 +11,12 @@ import functools
 import json
 from dataclasses import dataclass, field
 from importlib import resources
-from typing import Any
+from typing import Any, Callable
 
 import jsonschema
 
 from . import _primitives as ref
+from .log import check_head, consistency_source
 
 __all__ = ["VerifyReport", "verify_receipt"]
 
@@ -75,7 +76,8 @@ class VerifyReport:
 
 
 def verify_receipt(
-    receipt: dict, keys: dict, rpc_url: str | None = None, pipeline: dict | None = None
+    receipt: dict, keys: dict, rpc_url: str | None = None, pipeline: dict | None = None, *,
+    head: Any = None, consistency: Any = None, issuer: str | None = None, fetch: Callable[[str], Any] | None = None,
 ) -> VerifyReport:
     """Verify a receipt against a keyset (as returned by ``GET /.well-known/poaw-keys.json`` or
     :meth:`QedProof.get_keys`). With ``rpc_url``, also checks the on-chain anchor (SPEC §8.4); without
@@ -84,6 +86,13 @@ def verify_receipt(
     If the body carries a ``policy``, ``pipeline`` (the pipeline document, SPEC §15.2) is checked against it;
     without ``pipeline`` the ``policy`` check reports ``"not_checked"`` and does not fail the entry. Any doubt fails the check — an
     RPC error, a decode error or a mismatch all give ``"unproven"``-shaped results, never a pass.
+
+    When the anchor's tree size differs from the receipt's proof (SPEC §8.4), a consistency proof connects the two
+    roots: pass ``consistency`` (a ``GET /v1/log/consistency`` response, or a list of them), or ``issuer`` (the issuer's
+    base URL, from which ``/v1/log/consistency`` is fetched; ``fetch(url) -> dict`` overrides the HTTP GET). With none
+    obtainable the anchor reads ``"consistency_proof_required"``; a proof that does not verify reads
+    ``"consistency_proof_invalid"``. Pass ``head`` (a signed tree head, SPEC §8.5: bare ``{body, signature}`` or the
+    ``GET /v1/log/head`` response) to add a ``head`` check: its signature verifies and the receipt's tree is a prefix of it.
 
     Requires the ``qed-proof[anchor]`` extra when ``rpc_url`` is given.
     """
@@ -127,6 +136,7 @@ def verify_receipt(
         )
         c["inclusion"] = root is not None and ref.b64u(root) == proof["root_hash"]
 
+    get_consistency = consistency_source(consistency, issuer, fetch)
     proven_by = None
     anchor_checked = False
     if not (proof and proof.get("anchor")):
@@ -140,7 +150,7 @@ def verify_receipt(
             raise ImportError(
                 "rpc_url was given but the 'anchor' extra is not installed: pip install 'qed-proof[anchor]'"
             ) from exc
-        a = _anchor.check_anchor(proof, keys, rpc_url, ref.b64u_decode)
+        a = _anchor.check_anchor(proof, keys, rpc_url, ref.b64u_decode, get_consistency)
         c["anchor"] = True if a["ok"] else a["reason"]
         proven_by = a["proven_by"]
         anchor_checked = True
@@ -150,9 +160,14 @@ def verify_receipt(
     if policy is not None:
         c["policy"] = "not_checked" if pipeline is None else _check_policy(policy, pipeline)
 
+    if head is not None:  # §8.5: only when the caller supplied a signed tree head
+        h = check_head(head, proof, keys, get_consistency)
+        c["head"] = True if h["ok"] else h["reason"]
+
     required = ("spec_version", "schema", "integers_only", "key", "signature") + (() if is_change else ("claim_digest",))
     valid = (all(c[k] is True for k in required) and c["inclusion"] in (True, "absent")
-             and c.get("policy", True) in (True, "not_checked"))
+             and c.get("policy", True) in (True, "not_checked")
+             and c.get("head", True) is True)
     # SPEC §7: report the ACHIEVED level. L2 needs inclusion AND an anchor verified on-chain (rpc_url given); offline
     # the ceiling is 1.
     achieved = (2 if c["inclusion"] is True and c["anchor"] is True else 1) if valid else 0

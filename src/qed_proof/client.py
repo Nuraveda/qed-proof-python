@@ -16,6 +16,9 @@ from urllib.parse import quote
 import httpx
 
 from .actions import Action
+from .log import (
+    AnchorPage, ConsistencyProof, EntryPage, InclusionProof, LogHead, _params,
+)
 from .verify import VerifyReport, verify_receipt
 
 __all__ = [
@@ -246,9 +249,45 @@ class QedProof:
         _raise_for_status(resp)
         return resp.json()
 
-    def verify(self, receipt: dict[str, Any], rpc_url: str | None = None) -> VerifyReport:
+    def verify(self, receipt: dict[str, Any], rpc_url: str | None = None, *, head: Any = None,
+               consistency: Any = None) -> VerifyReport:
+        """Fetch the issuer's keys and verify ``receipt``. A consistency proof the anchor or ``head`` check needs is
+        taken from ``consistency`` if given, else fetched from this client's ``base_url``."""
         keys = self.get_keys()
-        return verify_receipt(receipt, keys, rpc_url=rpc_url)
+
+        def fetch(url: str) -> Any:
+            resp = self._client.get(url)
+            _raise_for_status(resp)
+            return resp.json()
+
+        return verify_receipt(receipt, keys, rpc_url=rpc_url, head=head, consistency=consistency,
+                              issuer=self._base_url, fetch=fetch)
+
+    # --- public Merkle log (SPEC §8.6): free, no auth; the API key is never sent -----------------
+    def _log_get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        resp = self._client.get(f"{self._base_url}/v1/log/{path}", params=params or None)
+        _raise_for_status(resp)
+        return resp.json()
+
+    def log_head(self) -> LogHead:
+        """``GET /v1/log/head``: the signed tree head and the latest landed anchor. Check with ``verify_tree_head``."""
+        return LogHead._from_dict(self._log_get("head"))
+
+    def log_consistency(self, first: int, second: int) -> ConsistencyProof:
+        """``GET /v1/log/consistency``: RFC 6962 proof that the size-``first`` tree is a prefix of size ``second``."""
+        return ConsistencyProof._from_dict(self._log_get("consistency", {"first": first, "second": second}))
+
+    def log_proof(self, leaf_index: int, tree_size: int | None = None) -> InclusionProof:
+        """``GET /v1/log/proof``: inclusion proof for a leaf (``tree_size`` defaults to the current size)."""
+        return InclusionProof._from_dict(self._log_get("proof", _params(leaf_index=leaf_index, tree_size=tree_size)))
+
+    def log_anchors(self, limit: int = 20, before: int | None = None) -> AnchorPage:
+        """``GET /v1/log/anchors``: landed on-chain anchors, newest first (``limit`` <= 100)."""
+        return AnchorPage._from_dict(self._log_get("anchors", _params(limit=limit, before=before)))
+
+    def log_entries(self, start: int | None = None, limit: int = 50) -> EntryPage:
+        """``GET /v1/log/entries``: ledger rows (``leaf_index``, ``leaf_hash``, ``created_at``), ascending (``limit`` <= 100)."""
+        return EntryPage._from_dict(self._log_get("entries", _params(start=start, limit=limit)))
 
 
 class AsyncQedProof:
@@ -346,6 +385,40 @@ class AsyncQedProof:
         _raise_for_status(resp)
         return resp.json()
 
-    async def verify(self, receipt: dict[str, Any], rpc_url: str | None = None) -> VerifyReport:
+    async def verify(self, receipt: dict[str, Any], rpc_url: str | None = None, *, head: Any = None,
+                     consistency: Any = None) -> VerifyReport:
+        """Fetch the issuer's keys and verify ``receipt``. A consistency proof the anchor or ``head`` check needs is
+        taken from ``consistency`` if given, else fetched from this client's ``base_url``."""
+        import asyncio
         keys = await self.get_keys()
-        return verify_receipt(receipt, keys, rpc_url=rpc_url)
+        # verify_receipt is synchronous (it may also call a JSON-RPC endpoint), so run it off the event loop.
+        return await asyncio.to_thread(
+            verify_receipt, receipt, keys, rpc_url, None,
+            head=head, consistency=consistency, issuer=self._base_url,
+        )
+
+    # --- public Merkle log (SPEC §8.6): free, no auth; the API key is never sent -----------------
+    async def _log_get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        resp = await self._client.get(f"{self._base_url}/v1/log/{path}", params=params or None)
+        _raise_for_status(resp)
+        return resp.json()
+
+    async def log_head(self) -> LogHead:
+        """``GET /v1/log/head``: the signed tree head and the latest landed anchor. Check with ``verify_tree_head``."""
+        return LogHead._from_dict(await self._log_get("head"))
+
+    async def log_consistency(self, first: int, second: int) -> ConsistencyProof:
+        """``GET /v1/log/consistency``: RFC 6962 proof that the size-``first`` tree is a prefix of size ``second``."""
+        return ConsistencyProof._from_dict(await self._log_get("consistency", {"first": first, "second": second}))
+
+    async def log_proof(self, leaf_index: int, tree_size: int | None = None) -> InclusionProof:
+        """``GET /v1/log/proof``: inclusion proof for a leaf (``tree_size`` defaults to the current size)."""
+        return InclusionProof._from_dict(await self._log_get("proof", _params(leaf_index=leaf_index, tree_size=tree_size)))
+
+    async def log_anchors(self, limit: int = 20, before: int | None = None) -> AnchorPage:
+        """``GET /v1/log/anchors``: landed on-chain anchors, newest first (``limit`` <= 100)."""
+        return AnchorPage._from_dict(await self._log_get("anchors", _params(limit=limit, before=before)))
+
+    async def log_entries(self, start: int | None = None, limit: int = 50) -> EntryPage:
+        """``GET /v1/log/entries``: ledger rows (``leaf_index``, ``leaf_hash``, ``created_at``), ascending (``limit`` <= 100)."""
+        return EntryPage._from_dict(await self._log_get("entries", _params(start=start, limit=limit)))

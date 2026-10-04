@@ -1,8 +1,8 @@
 """Ported, not imported: the poaw/0.1 and poaw/0.2 receipt primitives (SPEC.md sections 3, 5 and 8).
 
 This is a line-for-line port of ``oss/core-python/src/poaw_core/__init__.py`` from the QED Proof
-monorepo, trimmed to what a *verifier* needs (no tree-building or consistency-proof helpers, since
-the SDK only checks receipts it is handed). Keep this in sync with the reference by hand: the
+monorepo, trimmed to what a *verifier* needs (no tree-building or proof-generation helpers, since
+the SDK only checks receipts and heads it is handed). Keep this in sync with the reference by hand: the
 conformance suite in ``tests/test_conformance.py`` is what actually proves it matches.
 """
 from __future__ import annotations
@@ -19,6 +19,8 @@ SPEC_VERSION = "poaw/0.1"  # what an issuer says when it uses nothing introduced
 SPEC_VERSION_V02 = "poaw/0.2"  # required when a body carries `policy`, and for every change entry
 SIG_DOMAIN = b"POAW-RECEIPT-V0\n"
 CHANGE_SIG_DOMAIN = b"POAW-CHANGE-V0\n"  # §5.1: a change entry is signed under its own domain
+TREE_HEAD_SIG_DOMAIN = b"POAW-TREE-HEAD-V0\n"  # §8.5: a signed tree head, so it can never verify as a receipt or change
+TREE_HEAD_FIELDS = ("log_id", "tree_size", "root_hash", "issued_at")
 
 
 # --- encoding (SPEC §3) ------------------------------------------------------------------------
@@ -107,3 +109,48 @@ def root_from_inclusion(index: int, size: int, leaf: bytes, path: list[bytes]) -
         fn >>= 1
         sn >>= 1
     return r if sn == 0 else None
+
+
+def verify_tree_head(pk_raw: bytes, body: dict, sig_value: str) -> bool:
+    """True iff `body` has exactly the §8.5 fields and `sig_value` signs it under the tree-head domain."""
+    if not isinstance(body, dict) or set(body) != set(TREE_HEAD_FIELDS):
+        return False
+    if not isinstance(body["tree_size"], int) or isinstance(body["tree_size"], bool) or body["tree_size"] < 0:
+        return False
+    return verify_signature(pk_raw, body, sig_value, TREE_HEAD_SIG_DOMAIN)
+
+
+def _pow2(n: int) -> bool:
+    return n > 0 and n & (n - 1) == 0
+
+
+def verify_consistency(m: int, n: int, old_root: bytes, new_root: bytes, proof: list[bytes]) -> bool:
+    """RFC 9162 §2.1.4.2. True iff `proof` shows the size-m tree (old_root) is a prefix of the size-n tree (new_root)."""
+    if not 0 < m <= n:
+        return False
+    if m == n:
+        return not proof and old_root == new_root
+    if not proof:
+        return False
+    path = list(proof)
+    if _pow2(m):
+        path = [old_root] + path
+    fn, sn = m - 1, n - 1
+    while fn & 1:
+        fn >>= 1
+        sn >>= 1
+    fr = sr = path[0]
+    for c in path[1:]:
+        if sn == 0:
+            return False
+        if fn & 1 or fn == sn:
+            fr, sr = _node(c, fr), _node(c, sr)
+            if not fn & 1:
+                while fn and not fn & 1:
+                    fn >>= 1
+                    sn >>= 1
+        else:
+            sr = _node(sr, c)
+        fn >>= 1
+        sn >>= 1
+    return sn == 0 and fr == old_root and sr == new_root

@@ -98,6 +98,45 @@ Without `rpc_url`, an anchored receipt's `checks["anchor"]` reads `"not_checked_
 Calling `verify_receipt(..., rpc_url=...)` without the `anchor` extra installed raises a clear
 `ImportError` telling you to `pip install "qed-proof[anchor]"`.
 
+### Anchors at a different tree size, and signed tree heads
+
+An anchor often attests a larger tree than the receipt's own proof. `verify_receipt` then needs an RFC 6962
+**consistency proof** to connect the two roots: pass one you already hold, or the issuer's base URL to fetch it.
+`qp.verify(...)` uses the client's `base_url` automatically.
+
+```python
+report = verify_receipt(receipt, keys, rpc_url="https://sepolia.base.org",
+                        consistency=qp.log_consistency(7, 9).raw)   # or issuer="https://api.qedproof.site"
+report.checks["anchor"]  # True, "consistency_proof_required" (none obtainable) or "consistency_proof_invalid"
+```
+
+A signed tree head (SPEC §8.5) pins the issuer to a single history. Verify it, and optionally check a receipt against it:
+
+```python
+from qed_proof import verify_tree_head, verify_consistency
+
+head = qp.log_head()                                  # no API key needed
+verify_tree_head(head, keys).valid                    # signature + key check, under its own signing domain
+verify_receipt(receipt, keys, head=head.raw)          # adds checks["head"]: the receipt's tree is a prefix of the head
+verify_consistency(3, 7, old_root, new_root, proof)   # RFC 9162 §2.1.4.2; roots/nodes as base64url or bytes
+```
+
+## The public log
+
+The issuer's Merkle log is free to read, with no authentication (the client never sends your API key for these):
+
+```python
+qp.log_head()                            # signed tree head + latest landed anchor
+qp.log_consistency(first, second)        # proof that the size-`first` tree is a prefix of size `second`
+qp.log_proof(leaf_index, tree_size=None) # inclusion proof for one leaf
+qp.log_anchors(limit=20, before=None)    # on-chain anchors, newest first; page with `.next`
+qp.log_entries(start=None, limit=50)     # ledger of (leaf_index, leaf_hash, created_at); hashes only
+```
+
+Each returns a typed, frozen dataclass (`LogHead`, `ConsistencyProof`, `InclusionProof`, `AnchorPage`, `EntryPage`) with
+the original JSON on `.raw`. `AsyncQedProof` has the same methods as coroutines. Treat what the log returns as a claim to
+check, not a fact: verify heads and proofs against roots you trust.
+
 ## Self-hosted / a different node
 
 Point the client at your own deployment instead of the default `https://api.qedproof.site`:

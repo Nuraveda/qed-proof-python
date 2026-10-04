@@ -23,11 +23,35 @@ from .client import (
     QedProofTimeout,
 )
 from ._primitives import pipeline_digest
+from .log import (
+    AnchorPage,
+    ConsistencyProof,
+    EntryPage,
+    InclusionProof,
+    LogAnchor,
+    LogEntry,
+    LogHead,
+    SignedTreeHead,
+    TreeHeadReport,
+    verify_consistency,
+    verify_tree_head,
+)
 from .verify import VerifyReport, verify_receipt
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
+    "AnchorPage",
+    "ConsistencyProof",
+    "EntryPage",
+    "InclusionProof",
+    "LogAnchor",
+    "LogEntry",
+    "LogHead",
+    "SignedTreeHead",
+    "TreeHeadReport",
+    "verify_consistency",
+    "verify_tree_head",
     "Action",
     "actions",
     "AsyncQedProof",

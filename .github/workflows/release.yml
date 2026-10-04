@@ -47,3 +47,23 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
         with:
           packages-dir: dist/
+
+  github-release:
+    # Creates (or refreshes) the GitHub Release for the tag once the package is on the registry; the release body is that
+    # version's section of the changelog. Separate job so `contents: write` is held by nothing that publishes.
+    needs: publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Create or update the GitHub Release from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#sdk-python-v}"
+          awk -v v="$VERSION" 'BEGIN{h="## [" v "]"} index($0,h)==1{p=1;next} p&&(/^## \[/||/^\[[^]]+\]: http/){exit} p' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "::error::no CHANGELOG.md section for $VERSION"; exit 1; }
+          gh release view "$TAG" >/dev/null 2>&1 && gh release edit "$TAG" --title "qed-proof $VERSION" --notes-file notes.md --latest \
+            || gh release create "$TAG" --verify-tag --title "qed-proof $VERSION" --notes-file notes.md --latest

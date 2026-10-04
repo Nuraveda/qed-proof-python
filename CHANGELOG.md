@@ -1,7 +1,26 @@
 # Changelog
 
-All notable changes to `qed-proof` are documented here. This project follows
+All notable changes to `qed-proof` are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+## [0.3.0] - 2026-10-04
+
+Adds the free public Merkle log: read the log and check signed tree heads and consistency proofs.
+
+### Added
+
+- Public Merkle log client methods, sync and async, no API key sent: `log_head()`, `log_consistency(first, second)`,
+  `log_proof(leaf_index, tree_size=None)`, `log_anchors(limit=20, before=None)`, `log_entries(start=None, limit=50)`,
+  returning typed models (`LogHead`, `ConsistencyProof`, `InclusionProof`, `AnchorPage`, `EntryPage`).
+- `verify_tree_head(head, keys)` (SPEC §8.5) and `verify_consistency(m, n, old_root, new_root, proof)` (RFC 9162 §2.1.4.2).
+- `verify_receipt(..., consistency=, issuer=, fetch=)`: when an anchor's tree size differs from the receipt's proof, a
+  consistency proof (supplied, or fetched from the issuer's `/v1/log/consistency`) connects the roots. The anchor check
+  reports `consistency_proof_required` when none is obtainable and `consistency_proof_invalid` when it does not verify.
+- `verify_receipt(..., head=)` adds a `head` check: the signed tree head verifies and the receipt's tree is a prefix of it.
+- `QedProof.verify` / `AsyncQedProof.verify` accept `head=` and `consistency=` and fetch proofs from the client's `base_url`.
 
 ## [0.2.0] - 2026-10-01
 
@@ -36,7 +55,7 @@ All notable changes to `qed-proof` are documented here. This project follows
 The first version published to PyPI. 0.1.0 was tagged on the public repository but never
 published; 0.1.1 has the same library code, released through the gated trusted-publishing workflow.
 
-## [0.1.0] - 2026-09-26 (never published)
+## [0.1.0] - 2026-09-27 (never published)
 
 Initial release.
 
@@ -53,3 +72,11 @@ Initial release.
 - Optional `anchor` extra (`eth-abi`, `eth-hash`) for checking a receipt's on-chain EAS anchor against
   a JSON-RPC endpoint.
 - Errors: `QedProofError`, `QedProofRateLimited` (exposes `retry_after`), `QedProofTimeout`.
+
+[Unreleased]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.3.0...HEAD
+[0.3.0]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.2.0...sdk-python-v0.3.0
+[0.2.0]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.1.3...sdk-python-v0.2.0
+[0.1.3]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.1.2...sdk-python-v0.1.3
+[0.1.2]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.1.1...sdk-python-v0.1.2
+[0.1.1]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.1.0...sdk-python-v0.1.1
+[0.1.0]: https://github.com/Nuraveda/qed-proof-python/releases/tag/sdk-python-v0.1.0
