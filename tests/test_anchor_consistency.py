@@ -40,8 +40,8 @@ def _chain(size, root_b64):
     return lambda url, method, *params: hex(84532) if method == "eth_chainId" else "0x" + att.hex()
 
 
-def _proof(size, root):
-    return {"log_id": CONS["log_id"], "tree_size": size, "root_hash": root,
+def _proof(size, root, leaf=0):
+    return {"log_id": CONS["log_id"], "leaf_index": leaf, "tree_size": size, "root_hash": root,
             "anchor": {"chain": "eip155:84532", "scheme": "eas", "uid": "0x" + UID.hex(), "tx_hash": "0x" + "11" * 32,
                        "tree_size": 7 if size == 3 else 3}}
 
@@ -59,6 +59,13 @@ def test_anchor_larger_than_receipt_with_valid_proof_passes(monkeypatch):  # rec
 def test_anchor_smaller_than_receipt_with_valid_proof_passes(monkeypatch):  # receipt at 7, anchor at 3
     r = _run(monkeypatch, _chain(3, CONS["first_root"]), _proof(7, CONS["second_root"]), [CONS])
     assert r["ok"] is True and r["reason"] == "anchored"
+
+
+@pytest.mark.parametrize("leaf", [3, 6])
+def test_anchor_smaller_than_receipt_does_not_cover_a_later_leaf(monkeypatch, leaf):
+    # Audit #232: the anchor of the first 3 leaves can't give a proven-by time to leaf 3 or later.
+    r = _run(monkeypatch, _chain(3, CONS["first_root"]), _proof(7, CONS["second_root"], leaf), [CONS])
+    assert r == {"ok": False, "reason": "anchor_does_not_cover_leaf", "proven_by": None}
 
 
 def test_anchor_with_wrong_proof_is_invalid(monkeypatch):

@@ -6,6 +6,15 @@ All notable changes to `qed-proof` are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-08
+
+### Fixed
+
+- An anchor of a **smaller** tree than the receipt's proof no longer counts as anchoring a receipt appended after it.
+  The check now requires `proof.leaf_index < anchor.tree_size` and otherwise reports `anchor_does_not_cover_leaf`
+  (SPEC §8.4). Before, a valid consistency proof alone was accepted, so such a receipt got a proven-by time from
+  before it existed. Receipts from an honest issuer are unaffected: it attaches an anchor that covers the receipt.
+
 ## [0.4.0] - 2026-10-04
 
 ### Added
@@ -84,7 +93,8 @@ Initial release.
   a JSON-RPC endpoint.
 - Errors: `QedProofError`, `QedProofRateLimited` (exposes `retry_after`), `QedProofTimeout`.
 
-[Unreleased]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.3.0...HEAD
+[Unreleased]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.4.1...HEAD
+[0.4.1]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.4.0...sdk-python-v0.4.1
 [0.4.0]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.3.0...sdk-python-v0.4.0
 [0.3.0]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.2.0...sdk-python-v0.3.0
 [0.2.0]: https://github.com/Nuraveda/qed-proof-python/compare/sdk-python-v0.1.3...sdk-python-v0.2.0

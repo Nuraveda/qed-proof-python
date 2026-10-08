@@ -72,6 +72,10 @@ def check_anchor(proof: dict, keyset: dict, rpc_url: str, b64u_decode, get_consi
         return {"ok": False, "reason": "data_undecodable", "proven_by": None}
     if log_id != b64u_decode(proof["log_id"]) or size != a["tree_size"]:
         return {"ok": False, "reason": "log_or_size_mismatch", "proven_by": None}
+    leaf = proof.get("leaf_index")
+    if a["tree_size"] < proof["tree_size"] and not (isinstance(leaf, int) and 0 <= leaf < a["tree_size"]):
+        # SPEC §8.4: an anchor of a smaller tree only covers its own leaves; a leaf appended after it gets no proven-by time.
+        return {"ok": False, "reason": "anchor_does_not_cover_leaf", "proven_by": None}
     if a["tree_size"] != proof["tree_size"]:
         # SPEC §8.4: connect the two roots with an RFC 6962 consistency proof. The anchored root is the chain's (`root`);
         # the receipt's is `proof.root_hash`. Whichever tree is smaller is the "old" one; the larger must extend it.

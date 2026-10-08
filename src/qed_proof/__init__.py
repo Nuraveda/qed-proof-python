@@ -38,7 +38,7 @@ from .log import (
 )
 from .verify import AttestationError, NitroAttestation, VerifyReport, verify_receipt
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 __all__ = [
     "AttestationError",
